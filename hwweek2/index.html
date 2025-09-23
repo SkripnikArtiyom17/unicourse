@@ -8,19 +8,30 @@
 </head>
 <body>
     <div class="container">
-        <h1>Content-Based Movie Recommender</h1>
-        <p>Select a movie you like, and we'll find similar ones for you!</p>
+        <header>
+            <h1>Content-Based Movie Recommender</h1>
+            <p>Select a movie you like, and we'll find similar ones for you!</p>
+        </header>
         
-        <div class="controls">
-            <select id="movie-select">
-                <option value="" disabled selected>Select a movie...</option>
-            </select>
-            <button id="recommend-btn">Get Recommendations</button>
-        </div>
+        <main>
+            <div class="input-section">
+                <div class="form-group">
+                    <label for="movie-select">Choose a movie:</label>
+                    <select id="movie-select">
+                        <option value="" disabled selected>Loading movies...</option>
+                    </select>
+                </div>
+                <button id="recommend-btn" onclick="getRecommendations()">Get Recommendations</button>
+            </div>
+            
+            <div id="result-box">
+                <p id="result">Data is loading. Please wait...</p>
+            </div>
+        </main>
         
-        <div id="result-box">
-            <p id="result">Data loading...</p>
-        </div>
+        <footer>
+            <p>Movie recommendations based on genre similarity using cosine similarity algorithm.</p>
+        </footer>
     </div>
 
     <script src="data.js"></script>
