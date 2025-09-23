@@ -1,117 +1,107 @@
 /**
- * data.js
- * ----------
- * Responsible for loading and parsing raw data files (u.item, u.data).
- * Exposes global variables: movies, ratings, GENRE_NAMES, and the async function loadData().
- *
- * Parsing notes:
- * - u.item has many fields separated by '|'. The last genre flags include "unknown" first in ML-100k.
- *   Per specification, we ONLY use the last 18 flags corresponding to the genres from "Action" to "Western".
- * - u.data is tab-separated: userId \t itemId \t rating \t timestamp
+ * data.js — robust loader & parser for MovieLens 100k format.
+ * Exposes: movies, ratings, GENRE_NAMES, loadData()
  */
 
-// Global state (intentionally on window/global scope for simplicity in a vanilla setup)
 let movies = [];
 let ratings = [];
 
-/**
- * Fixed order for 18 genres (defines vector dimensions for cosine similarity).
- * IMPORTANT: This excludes "unknown" by design and must align with the last 18 flags in u.item lines.
- */
+/** Fixed order for 18 genres (Action … Western). */
 const GENRE_NAMES = [
-  "Action",
-  "Adventure",
-  "Animation",
-  "Children's",
-  "Comedy",
-  "Crime",
-  "Documentary",
-  "Drama",
-  "Fantasy",
-  "Film-Noir",
-  "Horror",
-  "Musical",
-  "Mystery",
-  "Romance",
-  "Sci-Fi",
-  "Thriller",
-  "War",
-  "Western"
+  "Action","Adventure","Animation","Children's","Comedy","Crime","Documentary",
+  "Drama","Fantasy","Film-Noir","Horror","Musical","Mystery","Romance","Sci-Fi",
+  "Thriller","War","Western"
 ];
 
-/**
- * Load both files and parse them.
- * On any error, sets a user-friendly message in #result.
- */
+/** Utility: quick check to see if a response looks like HTML (e.g., 404 page). */
+function looksLikeHTML(text) {
+  const head = text.slice(0, 200).toLowerCase();
+  return head.includes('<!doctype') || head.includes('<html');
+}
+
+/** Load both files, parse them, and update the UI message on success/failure. */
 async function loadData() {
   const resultEl = document.getElementById('result');
 
-  try {
-    // Fetch and parse u.item
-    const itemResp = await fetch('u.item');
-    if (!itemResp.ok) throw new Error(`Failed to load u.item (${itemResp.status})`);
-    const itemText = await itemResp.text();
-    parseItemData(itemText);
+  // Warn if served from file:// (fetch will fail or be blocked)
+  if (location.protocol === 'file:') {
+    resultEl.textContent = 'Please run this via a local HTTP server (e.g., "python3 -m http.server") — fetch() is blocked on file://.';
+    return;
+  }
 
-    // Fetch and parse u.data
-    const dataResp = await fetch('u.data');
+  try {
+    const [itemResp, dataResp] = await Promise.all([
+      fetch('./u.item', { cache: 'no-cache' }),
+      fetch('./u.data', { cache: 'no-cache' })
+    ]);
+
+    if (!itemResp.ok) throw new Error(`Failed to load u.item (${itemResp.status})`);
     if (!dataResp.ok) throw new Error(`Failed to load u.data (${dataResp.status})`);
-    const dataText = await dataResp.text();
+
+    const [itemText, dataText] = await Promise.all([itemResp.text(), dataResp.text()]);
+
+    // Guard against servers returning HTML error pages
+    if (looksLikeHTML(itemText)) throw new Error('u.item request returned HTML (likely a 404 page).');
+    if (looksLikeHTML(dataText)) throw new Error('u.data request returned HTML (likely a 404 page).');
+
+    parseItemData(itemText);
     parseRatingData(dataText);
 
-    if (resultEl) {
-      resultEl.textContent = 'Data loaded. Please select a movie.';
+    if (movies.length === 0) {
+      resultEl.textContent =
+        'Parsed 0 movies. Check that your "u.item" is MovieLens 100k format with pipe "|" delimiter and genre flags at the end.';
+      return;
     }
+
+    resultEl.textContent = `Loaded ${movies.length} movies, ${ratings.length} ratings. Please select a movie.`;
   } catch (err) {
     console.error(err);
-    if (resultEl) {
-      resultEl.textContent =
-        'Error loading data. Please ensure "u.item" and "u.data" are in the same directory as this page and served over HTTP (not file://).';
-    }
+    resultEl.textContent =
+      'Error loading data. Ensure "u.item" and "u.data" are next to index.html and the app is served over HTTP.';
   }
 }
 
 /**
- * Parse u.item content.
- * For each line:
- *  - Split by '|'
- *  - Extract id (index 0), title (index 1)
- *  - Read the LAST 18 flags (to align with GENRE_NAMES order: Action..Western)
- *  - Build genres[] and vector[] accordingly
+ * Parse u.item lines. Expected: pipe-delimited with 19 trailing genre flags:
+ * [unknown, Action, Adventure, ..., Western]
+ * We map the last 18 flags (Action..Western) to GENRE_NAMES.
  */
 function parseItemData(text) {
-  movies = []; // reset if reloaded
-  const lines = text.split('\n');
+  movies = [];
+  const lines = text.split(/\r?\n/);
 
   for (const rawLine of lines) {
     const line = rawLine.trim();
     if (!line) continue;
 
-    const parts = line.split('|');
-    if (parts.length < 20) continue; // not enough fields (safety)
+    // Must be the ML-100k pipe format
+    if (!line.includes('|')) continue;
+    const parts = line.split('|').map(s => s.trim());
 
-    // Extract id and title
-    const id = parseInt(parts[0], 10);
-    const title = parts[1] ? parts[1].trim() : `Movie ${id}`;
+    // Need at least enough fields so that the last 18 are the genre flags we care about
+    if (parts.length < 20) continue;
 
-    // The last 18 flags correspond to Action..Western
-    const genreFlags = parts.slice(-18);
-    if (genreFlags.length !== 18) continue; // safety
+    const id = Number.parseInt(parts[0], 10);
+    if (!Number.isFinite(id)) continue;
 
-    const vector = genreFlags.map(f => (f === '1' ? 1 : 0));
+    const title = (parts[1] || `Movie ${id}`).trim();
+
+    // ML-100k has 19 genre flags: unknown + 18 real genres. Some dumps may have extra columns;
+    // we always take the last 18 to align with GENRE_NAMES.
+    const last18 = parts.slice(-18);
+    if (last18.length !== 18) continue;
+
+    const vector = last18.map(f => (String(f).trim() === '1' ? 1 : 0));
     const genres = GENRE_NAMES.filter((_, idx) => vector[idx] === 1);
 
     movies.push({ id, title, genres, vector });
   }
 }
 
-/**
- * Parse u.data content (tab-separated).
- * userId \t itemId \t rating \t timestamp
- */
+/** Parse u.data (tab-separated): userId \t itemId \t rating \t timestamp */
 function parseRatingData(text) {
-  ratings = []; // reset if reloaded
-  const lines = text.split('\n');
+  ratings = [];
+  const lines = text.split(/\r?\n/);
 
   for (const rawLine of lines) {
     const line = rawLine.trim();
@@ -120,11 +110,19 @@ function parseRatingData(text) {
     const parts = line.split('\t');
     if (parts.length < 4) continue;
 
-    const userId = parseInt(parts[0], 10);
-    const itemId = parseInt(parts[1], 10);
-    const rating = parseInt(parts[2], 10);
-    const timestamp = parseInt(parts[3], 10);
+    const userId = Number.parseInt(parts[0], 10);
+    const itemId = Number.parseInt(parts[1], 10);
+    const rating = Number.parseInt(parts[2], 10);
+    const timestamp = Number.parseInt(parts[3], 10);
+
+    if (!Number.isFinite(userId) || !Number.isFinite(itemId)) continue;
 
     ratings.push({ userId, itemId, rating, timestamp });
   }
 }
+
+// Expose globally (vanilla setup)
+window.movies = movies;
+window.ratings = ratings;
+window.GENRE_NAMES = GENRE_NAMES;
+window.loadData = loadData;
