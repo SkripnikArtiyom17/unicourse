@@ -1,99 +1,155 @@
-/**
- * script.js — UI + cosine-based recommendations over binary genre vectors.
- */
-
+// Initialize the application when the window loads
 window.onload = async () => {
-  await loadData();
-  populateMoviesDropdown();
-
-  const resultEl = document.getElementById('result');
-  if (movies.length === 0) {
-    // If parsing failed, loadData already set an error message.
-    if (!resultEl.textContent || resultEl.textContent.trim() === '') {
-      resultEl.textContent = 'No movies found in dataset.';
+    try {
+        // Show loading message
+        document.getElementById('result').textContent = "Loading movie data...";
+        document.getElementById('result').className = "loading";
+        
+        // Disable the button until data is loaded
+        document.getElementById('recommend-btn').disabled = true;
+        
+        // Load data
+        await loadData();
+        
+        // Populate the dropdown
+        populateMoviesDropdown();
+        
+        // Enable the button
+        document.getElementById('recommend-btn').disabled = false;
+        
+        // Set up event listener for the button
+        document.getElementById('recommend-btn').addEventListener('click', getRecommendations);
+        
+    } catch (error) {
+        console.error("Initialization error:", error);
+        document.getElementById('result').textContent = "Error initializing application. Please refresh the page.";
+        document.getElementById('result').className = "error";
     }
-  } else {
-    if (!resultEl.textContent || resultEl.textContent.includes('Loading')) {
-      resultEl.textContent = 'Data loaded. Please select a movie.';
-    }
-  }
 };
 
-/** Fill the dropdown with movie titles (sorted A→Z) */
+// Populate the movies dropdown
 function populateMoviesDropdown() {
-  const select = document.getElementById('movie-select');
-  if (!select) return;
-  select.innerHTML = '';
-
-  const sorted = [...movies].sort((a, b) =>
-    a.title.toLowerCase().localeCompare(b.title.toLowerCase())
-  );
-
-  for (const m of sorted) {
-    const opt = document.createElement('option');
-    opt.value = String(m.id);
-    opt.textContent = m.title;
-    select.appendChild(opt);
-  }
+    const movieSelect = document.getElementById('movie-select');
+    
+    // Clear existing options except the first one
+    while (movieSelect.options.length > 1) {
+        movieSelect.remove(1);
+    }
+    
+    // Sort movies alphabetically by title
+    const sortedMovies = [...movies].sort((a, b) => a.title.localeCompare(b.title));
+    
+    // Add movies to dropdown
+    sortedMovies.forEach(movie => {
+        const option = document.createElement('option');
+        option.value = movie.id;
+        option.textContent = movie.title;
+        movieSelect.appendChild(option);
+    });
 }
 
-/** Cosine similarity for two equal-length numeric vectors. */
+// Calculate cosine similarity between two vectors
 function cosineSimilarity(vecA, vecB) {
-  if (!Array.isArray(vecA) || !Array.isArray(vecB) || vecA.length !== vecB.length) return 0;
-
-  let dot = 0, magA2 = 0, magB2 = 0;
-  for (let i = 0; i < vecA.length; i++) {
-    const a = vecA[i] || 0;
-    const b = vecB[i] || 0;
-    dot += a * b;
-    magA2 += a * a;
-    magB2 += b * b;
-  }
-  const magA = Math.sqrt(magA2);
-  const magB = Math.sqrt(magB2);
-  if (magA === 0 || magB === 0) return 0;
-  return dot / (magA * magB);
+    // Calculate dot product
+    let dotProduct = 0;
+    for (let i = 0; i < vecA.length; i++) {
+        dotProduct += vecA[i] * vecB[i];
+    }
+    
+    // Calculate magnitudes
+    let magnitudeA = 0;
+    let magnitudeB = 0;
+    
+    for (let i = 0; i < vecA.length; i++) {
+        magnitudeA += vecA[i] * vecA[i];
+        magnitudeB += vecB[i] * vecB[i];
+    }
+    
+    magnitudeA = Math.sqrt(magnitudeA);
+    magnitudeB = Math.sqrt(magnitudeB);
+    
+    // Avoid division by zero
+    if (magnitudeA === 0 || magnitudeB === 0) {
+        return 0;
+    }
+    
+    // Return cosine similarity
+    return dotProduct / (magnitudeA * magnitudeB);
 }
 
-/** Get top-2 recommendations for the selected movie. */
+// Main recommendation function
 function getRecommendations() {
-  const resultEl = document.getElementById('result');
-  const select = document.getElementById('movie-select');
-
-  if (!select || select.options.length === 0) {
-    resultEl.textContent = 'No movies available to recommend.';
-    return;
-  }
-
-  const selectedId = Number.parseInt(select.value, 10);
-  if (!Number.isFinite(selectedId)) {
-    resultEl.textContent = 'Please select a valid movie.';
-    return;
-  }
-
-  const likedMovie = movies.find(m => m.id === selectedId);
-  if (!likedMovie) {
-    resultEl.textContent = 'Selected movie not found.';
-    return;
-  }
-
-  const candidates = movies.filter(m => m.id !== likedMovie.id);
-  const scored = candidates.map(c => ({
-    ...c,
-    score: cosineSimilarity(likedMovie.vector, c.vector)
-  }));
-
-  scored.sort((a, b) => b.score - a.score);
-  const topTwo = scored.slice(0, 2);
-
-  if (topTwo.length === 0) {
-    resultEl.textContent = `No recommendations available for "${likedMovie.title}".`;
-    return;
-  }
-
-  const recTitles = topTwo.map(m => m.title).join(', ');
-  resultEl.textContent = `Because you liked "${likedMovie.title}", we recommend: ${recTitles}.`;
+    const movieSelect = document.getElementById('movie-select');
+    const selectedId = parseInt(movieSelect.value);
+    
+    // Validate selection
+    if (isNaN(selectedId)) {
+        document.getElementById('result').textContent = "Please select a movie first.";
+        document.getElementById('result').className = "error";
+        return;
+    }
+    
+    // Find the selected movie
+    const likedMovie = movies.find(m => m.id === selectedId);
+    
+    if (!likedMovie) {
+        document.getElementById('result').textContent = "Selected movie not found in database.";
+        document.getElementById('result').className = "error";
+        return;
+    }
+    
+    // Show loading message
+    document.getElementById('result').textContent = "Finding recommendations...";
+    document.getElementById('result').className = "loading";
+    
+    // Calculate recommendations (with a small delay to show loading state)
+    setTimeout(() => {
+        // Filter out the selected movie
+        const candidateMovies = movies.filter(m => m.id !== likedMovie.id);
+        
+        // Calculate similarity scores
+        const scoredMovies = candidateMovies.map(movie => ({
+            ...movie,
+            score: cosineSimilarity(likedMovie.vector, movie.vector)
+        }));
+        
+        // Sort by score (descending)
+        scoredMovies.sort((a, b) => b.score - a.score);
+        
+        // Get top recommendations
+        const topTwo = scoredMovies.slice(0, 2);
+        
+        // Display results
+        displayRecommendations(likedMovie, topTwo);
+    }, 500);
 }
 
-// Expose
-window.getRecommendations = getRecommendations;
+// Display recommendations in the UI
+function displayRecommendations(likedMovie, recommendations) {
+    const resultElement = document.getElementById('result');
+    
+    if (recommendations.length === 0) {
+        resultElement.textContent = "No recommendations found.";
+        resultElement.className = "error";
+        return;
+    }
+    
+    // Create the main message
+    let html = `<p class="success">Because you liked <strong>"${likedMovie.title}"</strong>, we recommend:</p>`;
+    html += '<div class="movie-list">';
+    
+    // Add each recommendation
+    recommendations.forEach(movie => {
+        html += `
+        <div class="movie-item">
+            <div class="movie-title">${movie.title}</div>
+            <div class="movie-genres">Genres: ${movie.genres.join(', ')}</div>
+            <div class="similarity-score">Similarity: ${(movie.score * 100).toFixed(1)}%</div>
+        </div>`;
+    });
+    
+    html += '</div>';
+    
+    resultElement.innerHTML = html;
+    resultElement.className = "success";
+}
