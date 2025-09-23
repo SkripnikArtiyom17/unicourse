@@ -1,40 +1,41 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Content-Based Movie Recommender</title>
-    <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Content-Based Movie Recommender</title>
+  <link rel="stylesheet" href="style.css" />
+  <!-- Optional: Inter font for cleaner typography -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>Content-Based Movie Recommender</h1>
-            <p>Select a movie you like, and we'll find similar ones for you!</p>
-        </header>
-        
-        <main>
-            <div class="input-section">
-                <div class="form-group">
-                    <label for="movie-select">Choose a movie:</label>
-                    <select id="movie-select">
-                        <option value="" disabled selected>Loading movies...</option>
-                    </select>
-                </div>
-                <button id="recommend-btn" onclick="getRecommendations()">Get Recommendations</button>
-            </div>
-            
-            <div id="result-box">
-                <p id="result">Data is loading. Please wait...</p>
-            </div>
-        </main>
-        
-        <footer>
-            <p>Movie recommendations based on genre similarity using cosine similarity algorithm.</p>
-        </footer>
-    </div>
+  <main class="page">
+    <section class="card">
+      <h1>Content-Based Movie Recommender</h1>
+      <p class="lead">Select a movie you like, and we’ll find similar ones for you.</p>
 
-    <script src="data.js"></script>
-    <script src="script.js"></script>
+      <div class="controls" role="group" aria-label="Movie selection and action">
+        <label class="visually-hidden" for="movie-select">Choose a movie</label>
+        <select id="movie-select" aria-label="Choose a movie"></select>
+
+        <button id="go-btn" type="button" onclick="getRecommendations()" aria-label="Get recommendations">
+          Get Recommendations
+        </button>
+      </div>
+
+      <div id="result-box" role="status" aria-live="polite" aria-atomic="true">
+        <div id="spinner" aria-hidden="true"></div>
+        <p id="result">Loading…</p>
+      </div>
+    </section>
+  </main>
+
+  <noscript>
+    Please enable JavaScript to use this application.
+  </noscript>
+
+  <!-- Load order matters -->
+  <script src="data.js"></script>
+  <script src="script.js"></script>
 </body>
 </html>
