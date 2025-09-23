@@ -1,43 +1,34 @@
 /**
- * script.js
- * ----------
- * UI initialization and recommendation logic using Cosine Similarity
- * over binary genre vectors.
+ * script.js — UI + cosine-based recommendations over binary genre vectors.
  */
 
-// Initialize on load
 window.onload = async () => {
-  // Load data from data.js module
   await loadData();
-  // Populate UI
   populateMoviesDropdown();
 
-  // If nothing loaded, inform user
   const resultEl = document.getElementById('result');
   if (movies.length === 0) {
-    resultEl.textContent = 'No movies found in dataset.';
-  } else if (resultEl.textContent.trim() === '') {
-    resultEl.textContent = 'Data loaded. Please select a movie.';
+    // If parsing failed, loadData already set an error message.
+    if (!resultEl.textContent || resultEl.textContent.trim() === '') {
+      resultEl.textContent = 'No movies found in dataset.';
+    }
+  } else {
+    if (!resultEl.textContent || resultEl.textContent.includes('Loading')) {
+      resultEl.textContent = 'Data loaded. Please select a movie.';
+    }
   }
 };
 
-/**
- * Populate the movie dropdown with titles from the global "movies" array.
- * Sorted alphabetically by title.
- */
+/** Fill the dropdown with movie titles (sorted A→Z) */
 function populateMoviesDropdown() {
   const select = document.getElementById('movie-select');
   if (!select) return;
-
-  // Clear existing
   select.innerHTML = '';
 
-  // Sort by title (case-insensitive)
   const sorted = [...movies].sort((a, b) =>
     a.title.toLowerCase().localeCompare(b.title.toLowerCase())
   );
 
-  // Append options
   for (const m of sorted) {
     const opt = document.createElement('option');
     opt.value = String(m.id);
@@ -46,20 +37,11 @@ function populateMoviesDropdown() {
   }
 }
 
-/**
- * Cosine Similarity between two equal-length numeric vectors.
- * For binary vectors, this reduces to dot / (||A|| * ||B||).
- * Returns a number in [0, 1] for non-negative vectors.
- */
+/** Cosine similarity for two equal-length numeric vectors. */
 function cosineSimilarity(vecA, vecB) {
-  if (!Array.isArray(vecA) || !Array.isArray(vecB) || vecA.length !== vecB.length) {
-    return 0;
-  }
+  if (!Array.isArray(vecA) || !Array.isArray(vecB) || vecA.length !== vecB.length) return 0;
 
-  let dot = 0;
-  let magA2 = 0;
-  let magB2 = 0;
-
+  let dot = 0, magA2 = 0, magB2 = 0;
   for (let i = 0; i < vecA.length; i++) {
     const a = vecA[i] || 0;
     const b = vecB[i] || 0;
@@ -67,70 +49,51 @@ function cosineSimilarity(vecA, vecB) {
     magA2 += a * a;
     magB2 += b * b;
   }
-
   const magA = Math.sqrt(magA2);
   const magB = Math.sqrt(magB2);
-
   if (magA === 0 || magB === 0) return 0;
   return dot / (magA * magB);
 }
 
-/**
- * Core recommendation flow:
- * 1) Read selection
- * 2) Find the liked movie
- * 3) Score all other movies by cosine similarity on genre vectors
- * 4) Take top 2 and display
- */
+/** Get top-2 recommendations for the selected movie. */
 function getRecommendations() {
   const resultEl = document.getElementById('result');
   const select = document.getElementById('movie-select');
 
   if (!select || select.options.length === 0) {
-    if (resultEl) resultEl.textContent = 'No movies available to recommend.';
+    resultEl.textContent = 'No movies available to recommend.';
     return;
   }
 
-  const selectedVal = select.value;
-  const selectedId = parseInt(selectedVal, 10);
-
-  if (Number.isNaN(selectedId)) {
-    if (resultEl) resultEl.textContent = 'Please select a valid movie.';
+  const selectedId = Number.parseInt(select.value, 10);
+  if (!Number.isFinite(selectedId)) {
+    resultEl.textContent = 'Please select a valid movie.';
     return;
   }
 
   const likedMovie = movies.find(m => m.id === selectedId);
   if (!likedMovie) {
-    if (resultEl) resultEl.textContent = 'Selected movie not found.';
+    resultEl.textContent = 'Selected movie not found.';
     return;
   }
 
-  // Prepare candidate pool (exclude the liked movie itself)
   const candidates = movies.filter(m => m.id !== likedMovie.id);
-
-  // Score by cosine similarity
   const scored = candidates.map(c => ({
     ...c,
     score: cosineSimilarity(likedMovie.vector, c.vector)
   }));
 
-  // Sort descending by score
   scored.sort((a, b) => b.score - a.score);
-
-  // Pick top two
   const topTwo = scored.slice(0, 2);
 
-  // Build message
-  let message = '';
   if (topTwo.length === 0) {
-    message = `No recommendations available for "${likedMovie.title}".`;
-  } else {
-    const recTitles = topTwo.map(m => m.title).join(', ');
-    message = `Because you liked "${likedMovie.title}", we recommend: ${recTitles}.`;
+    resultEl.textContent = `No recommendations available for "${likedMovie.title}".`;
+    return;
   }
 
-  if (resultEl) resultEl.textContent = message;
+  const recTitles = topTwo.map(m => m.title).join(', ');
+  resultEl.textContent = `Because you liked "${likedMovie.title}", we recommend: ${recTitles}.`;
 }
 
-// Make function available to inline onclick
+// Expose
 window.getRecommendations = getRecommendations;
