@@ -12,40 +12,26 @@ const GENRE_NAMES = [
 // Primary function to load data
 async function loadData() {
     try {
-        // In a real implementation, we would fetch from actual files
-        // For this demo, we'll use mock data that simulates the structure
-        
-        // Mock u.item data (movie information)
-        const mockItemData = `1|Toy Story (1995)|01-Jan-1995||http://us.imdb.com/M/title-exact?Toy%20Story%20(1995)|0|0|0|1|1|1|0|0|0|0|0|0|0|0|0|0|0|0|0
-2|GoldenEye (1995)|01-Jan-1995||http://us.imdb.com/M/title-exact?GoldenEye%20(1995)|0|1|0|0|0|0|0|0|0|0|0|0|0|0|1|0|1|0
-3|Four Rooms (1995)|01-Jan-1995||http://us.imdb.com/M/title-exact?Four%20Rooms%20(1995)|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0
-4|Get Shorty (1995)|01-Jan-1995||http://us.imdb.com/M/title-exact?Get%20Shorty%20(1995)|0|1|0|0|1|0|0|0|0|0|0|0|0|0|0|0|0|0
-5|Copycat (1995)|01-Jan-1995||http://us.imdb.com/M/title-exact?Copycat%20(1995)|0|0|0|0|0|1|0|1|0|0|0|0|0|0|0|1|0|0
-6|Shanghai Triad (1995)|01-Jan-1995||http://us.imdb.com/M/title-exact?Shanghai%20Triad%20(1995)|0|0|0|0|0|0|0|1|0|0|0|0|0|0|0|0|0|0
-7|Twelve Monkeys (1995)|01-Jan-1995||http://us.imdb.com/M/title-exact?Twelve%20Monkeys%20(1995)|0|0|0|0|0|0|0|1|0|0|0|0|0|1|0|0|0|0
-8|Babe (1995)|01-Jan-1995||http://us.imdb.com/M/title-exact?Babe%20(1995)|0|0|0|1|1|0|0|1|0|0|0|0|0|0|0|0|0|0
-9|Dead Man Walking (1995)|01-Jan-1995||http://us.imdb.com/M/title-exact?Dead%20Man%20Walking%20(1995)|0|0|0|0|0|0|0|1|0|0|0|0|0|0|0|0|0|0
-10|Richard III (1995)|01-Jan-1995||http://us.imdb.com/M/title-exact?Richard%20III%20(1995)|0|0|0|0|0|0|0|1|0|0|0|0|0|0|0|0|1|0`;
+        // Fetch and parse the actual data files
+        const [itemResponse, dataResponse] = await Promise.all([
+            fetch('u.item'),
+            fetch('u.data')
+        ]);
 
-        // Mock u.data (ratings data)
-        const mockRatingData = `196\t242\t3\t881250949
-186\t302\t3\t891717742
-22\t377\t1\t878887116
-244\t51\t2\t880606923
-166\t346\t1\t886397596
-298\t474\t4\t884182806
-115\t265\t2\t881171488
-253\t465\t5\t891628467
-305\t451\t3\t886324817
-6\t86\t3\t883603013`;
+        if (!itemResponse.ok || !dataResponse.ok) {
+            throw new Error('Failed to load data files');
+        }
 
-        // Parse the mock data
-        parseItemData(mockItemData);
-        parseRatingData(mockRatingData);
+        const itemText = await itemResponse.text();
+        const dataText = await dataResponse.text();
+
+        // Parse the data
+        parseItemData(itemText);
+        parseRatingData(dataText);
         
         // Update UI to show data is loaded
         if (document.getElementById('result')) {
-            document.getElementById('result').textContent = "Data loaded. Please select a movie.";
+            document.getElementById('result').textContent = `Data loaded. ${movies.length} movies available. Please select a movie.`;
             document.getElementById('result').className = "success";
         }
         
@@ -53,14 +39,14 @@ async function loadData() {
     } catch (error) {
         console.error("Error loading data:", error);
         if (document.getElementById('result')) {
-            document.getElementById('result').textContent = "Error loading movie data. Please refresh the page.";
+            document.getElementById('result').textContent = "Error loading movie data. Please make sure u.item and u.data files are in the same directory.";
             document.getElementById('result').className = "error";
         }
         return Promise.reject(error);
     }
 }
 
-// Parse movie/item data
+// Parse movie/item data from u.item file
 function parseItemData(text) {
     const lines = text.split('\n');
     
@@ -68,11 +54,13 @@ function parseItemData(text) {
         if (line.trim() === '') continue;
         
         const fields = line.split('|');
+        if (fields.length < 24) continue; // Skip invalid lines
+        
         const id = parseInt(fields[0]);
         const title = fields[1];
         
         // Extract genre flags (last 18 fields)
-        const genreFlags = fields.slice(5, 23); // Adjust indices based on actual data structure
+        const genreFlags = fields.slice(6, 24); // Genres are fields 6-23
         
         // Build genres array and binary vector
         const genres = [];
@@ -96,7 +84,7 @@ function parseItemData(text) {
     }
 }
 
-// Parse rating data
+// Parse rating data from u.data file
 function parseRatingData(text) {
     const lines = text.split('\n');
     
@@ -104,6 +92,8 @@ function parseRatingData(text) {
         if (line.trim() === '') continue;
         
         const fields = line.split('\t');
+        if (fields.length < 4) continue; // Skip invalid lines
+        
         const userId = parseInt(fields[0]);
         const itemId = parseInt(fields[1]);
         const rating = parseInt(fields[2]);
