@@ -1,150 +1,128 @@
-// Global variables
-let movies = [];
-let ratings = [];
+/* data.js
+   Purpose: Fetch and parse MovieLens data files (u.item, u.data).
+   Exposes:
+     - global arrays: movies, ratings
+     - async function loadData()
+     - helper: getMovieById(id), getRatingsCount(itemId)
+*/
 
-// Genre names in fixed order (as per the MovieLens dataset)
-const GENRE_NAMES = [
-    "Action", "Adventure", "Animation", "Children's", "Comedy", "Crime",
-    "Documentary", "Drama", "Fantasy", "Film-Noir", "Horror", "Musical",
-    "Mystery", "Romance", "Sci-Fi", "Thriller", "War", "Western"
+let movies = [];   // [{ id:Number, title:String, genres:[String], vector:[0/1 x 18] }]
+let ratings = [];  // [{ userId:Number, itemId:Number, rating:Number, timestamp:Number }]
+
+// Internal aggregate map for rating counts per item
+const _ratingCounts = new Map();
+
+/**
+ * Genres as 18-D vector (exclude "unknown"). Order matters and must match vector order.
+ * The original MovieLens 100k u.item has 19 genre flags: [unknown, Action, Adventure, ... , Western]
+ * We intentionally skip "unknown" and use only the last 18 flags in this order:
+ */
+const GENRES_18 = [
+  "Action", "Adventure", "Animation", "Children's", "Comedy", "Crime",
+  "Documentary", "Drama", "Fantasy", "Film-Noir", "Horror", "Musical",
+  "Mystery", "Romance", "Sci-Fi", "Thriller", "War", "Western"
 ];
 
-// Primary function to load data
+/**
+ * Load both data files. On failure, writes a friendly message into #result.
+ */
 async function loadData() {
-    try {
-        console.log("Starting to load data files...");
-        
-        // Fetch the actual data files
-        const itemResponse = await fetch('u.item');
-        const dataResponse = await fetch('u.data');
+  try {
+    const [itemsResp, ratingsResp] = await Promise.all([
+      fetch('u.item'),
+      fetch('u.data')
+    ]);
 
-        if (!itemResponse.ok) {
-            throw new Error(`Failed to load u.item: ${itemResponse.status}`);
-        }
-        if (!dataResponse.ok) {
-            throw new Error(`Failed to load u.data: ${dataResponse.status}`);
-        }
+    if (!itemsResp.ok) throw new Error(`Failed to load u.item (${itemsResp.status})`);
+    if (!ratingsResp.ok) throw new Error(`Failed to load u.data (${ratingsResp.status})`);
 
-        const itemText = await itemResponse.text();
-        const dataText = await dataResponse.text();
+    const itemsText = await itemsResp.text();
+    const ratingsText = await ratingsResp.text();
 
-        console.log("Files loaded successfully");
-        console.log("u.item length:", itemText.length);
-        console.log("u.data length:", dataText.length);
-
-        // Clear previous data
-        movies = [];
-        ratings = [];
-
-        // Parse the data
-        parseItemData(itemText);
-        parseRatingData(dataText);
-        
-        console.log(`Parsed ${movies.length} movies and ${ratings.length} ratings`);
-        
-        // Update UI to show data is loaded
-        if (document.getElementById('result')) {
-            document.getElementById('result').textContent = `Data loaded. ${movies.length} movies available. Please select a movie.`;
-            document.getElementById('result').className = "success";
-        }
-        
-        return Promise.resolve();
-    } catch (error) {
-        console.error("Error loading data:", error);
-        if (document.getElementById('result')) {
-            document.getElementById('result').textContent = `Error loading movie data: ${error.message}. Please make sure u.item and u.data files are in the same directory.`;
-            document.getElementById('result').className = "error";
-        }
-        return Promise.reject(error);
+    parseItemData(itemsText);
+    parseRatingData(ratingsText);
+  } catch (err) {
+    console.error('[loadData] Error:', err);
+    const resultEl = document.getElementById('result');
+    if (resultEl) {
+      resultEl.textContent = `Could not load data files. ${err.message}. Ensure "u.item" and "u.data" are present and served from the same folder.`;
     }
+    // Re-throw so callers can handle if needed.
+    throw err;
+  }
 }
 
-// Parse movie/item data from u.item file
+/**
+ * Parse u.item content.
+ * Each line: movie id | movie title | release date | video release date | IMDb URL | 19 genre flags
+ * We take only the last 18 flags (skip "unknown") and map to GENRES_18.
+ */
 function parseItemData(text) {
-    const lines = text.split('\n');
-    console.log(`Found ${lines.length} lines in u.item`);
-    
-    let parsedCount = 0;
-    
-    for (const line of lines) {
-        if (line.trim() === '') continue;
-        
-        const fields = line.split('|');
-        
-        // The u.item file should have 24 fields (movie id, title, release date, etc. + 18 genres)
-        if (fields.length < 24) {
-            console.warn('Skipping line with insufficient fields:', line);
-            continue;
-        }
-        
-        const id = parseInt(fields[0]);
-        if (isNaN(id)) {
-            console.warn('Skipping line with invalid ID:', line);
-            continue;
-        }
-        
-        const title = fields[1];
-        
-        // Extract genre flags (fields 6-23 are the 18 genre flags)
-        const genreFlags = fields.slice(6, 24);
-        
-        // Build genres array and binary vector
-        const genres = [];
-        const vector = [];
-        
-        for (let i = 0; i < GENRE_NAMES.length && i < genreFlags.length; i++) {
-            const flag = parseInt(genreFlags[i]) || 0;
-            vector.push(flag);
-            
-            if (flag === 1) {
-                genres.push(GENRE_NAMES[i]);
-            }
-        }
-        
-        movies.push({
-            id: id,
-            title: title,
-            genres: genres,
-            vector: vector
-        });
-        
-        parsedCount++;
+  movies = [];
+
+  const lines = text.split('\n');
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    // Split by '|'. The last 19 fields are genre flags; we use last 18.
+    const parts = line.split('|');
+    if (parts.length < 19) continue; // malformed
+
+    const id = Number(parts[0]);
+    const title = parts[1] || `Movie ${id}`;
+
+    // Extract the final 18 flags (skip the 'unknown' flag).
+    const flags18 = parts.slice(-18).map(v => Number(v));
+
+    // Build genres list and vector
+    const genres = [];
+    const vector = new Array(18);
+    for (let i = 0; i < 18; i++) {
+      const flag = flags18[i] === 1 ? 1 : 0;
+      vector[i] = flag;
+      if (flag === 1) genres.push(GENRES_18[i]);
     }
-    
-    console.log(`Successfully parsed ${parsedCount} movies`);
+
+    movies.push({ id, title, genres, vector });
+  }
 }
 
-// Parse rating data from u.data file
+/**
+ * Parse u.data content.
+ * Each line: user id \t item id \t rating \t timestamp
+ * Also builds _ratingCounts per item id (for optional tie-breakers).
+ */
 function parseRatingData(text) {
-    const lines = text.split('\n');
-    console.log(`Found ${lines.length} lines in u.data`);
-    
-    let parsedCount = 0;
-    
-    for (const line of lines) {
-        if (line.trim() === '') continue;
-        
-        const fields = line.split('\t');
-        if (fields.length < 4) continue;
-        
-        const userId = parseInt(fields[0]);
-        const itemId = parseInt(fields[1]);
-        const rating = parseInt(fields[2]);
-        const timestamp = parseInt(fields[3]);
-        
-        if (isNaN(userId) || isNaN(itemId) || isNaN(rating)) {
-            continue;
-        }
-        
-        ratings.push({
-            userId: userId,
-            itemId: itemId,
-            rating: rating,
-            timestamp: timestamp
-        });
-        
-        parsedCount++;
-    }
-    
-    console.log(`Successfully parsed ${parsedCount} ratings`);
+  ratings = [];
+  _ratingCounts.clear();
+
+  const lines = text.split('\n');
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    const parts = line.split('\t');
+    if (parts.length < 4) continue;
+
+    const userId = Number(parts[0]);
+    const itemId = Number(parts[1]);
+    const rating = Number(parts[2]);
+    const timestamp = Number(parts[3]);
+
+    ratings.push({ userId, itemId, rating, timestamp });
+
+    // Aggregate count
+    _ratingCounts.set(itemId, (_ratingCounts.get(itemId) || 0) + 1);
+  }
+}
+
+/** Helper: find a movie by id. */
+function getMovieById(id) {
+  return movies.find(m => m.id === id) || null;
+}
+
+/** Helper: get number of ratings for a specific item id. */
+function getRatingsCount(itemId) {
+  return _ratingCounts.get(itemId) || 0;
 }
