@@ -136,9 +136,41 @@ button:focus-visible {
   border-bottom: none;
 }
 
+/* Score badge: we color & scale via inline styles from JS, but keep a nice base look here */
 .badge {
   font-variant-numeric: tabular-nums;
-  opacity: 0.8;
+  line-height: 1;
+  border-radius: 10px;
+  padding: 2px 8px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+  transition: filter 0.15s ease, font-size 0.15s ease;
+}
+
+/* Optional legend that shows the red→yellow→green palette */
+#legend {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-weak);
+  font-size: 0.9rem;
+}
+
+#legend .bar {
+  flex: 1;
+  height: 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.15);
+  /* 0 -> red, 0.5 -> yellow, 1 -> green */
+  background: linear-gradient(90deg, hsl(0,90%,60%) 0%, hsl(60,90%,60%) 50%, hsl(120,90%,50%) 100%);
+}
+
+.legend-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: var(--text-weak);
 }
 
 /* A11y: hide purely decorative label text while keeping it readable by screen readers */
